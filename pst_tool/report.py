@@ -103,24 +103,133 @@ CSV_FIELDS = [
 ]
 
 
+def _message_row(m: MessageRecord) -> list:
+    return [
+        m.folder,
+        m.date.isoformat() if m.date else "",
+        m.sender,
+        m.sender_name,
+        "; ".join(m.to),
+        "; ".join(m.cc),
+        m.subject,
+        m.size_bytes,
+        len(m.attachments),
+        "; ".join(a.filename for a in m.attachments),
+        str(m.path),
+    ]
+
+
+class CsvStreamWriter:
+    """Write message rows to CSV one at a time.
+
+    Use this (instead of ``write_csv``) together with ``analyzer.analyze``'s
+    ``on_message`` callback when the mailbox is too large to hold every
+    ``MessageRecord`` in memory at once.
+    """
+
+    def __init__(self, out_path: Path):
+        self._fh = Path(out_path).open("w", newline="", encoding="utf-8")
+        self._writer = csv.writer(self._fh)
+        self._writer.writerow(CSV_FIELDS)
+
+    def write(self, m: MessageRecord) -> None:
+        self._writer.writerow(_message_row(m))
+
+    def close(self) -> None:
+        self._fh.close()
+
+    def __enter__(self) -> "CsvStreamWriter":
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        self.close()
+
+
 def write_csv(messages: Iterable[MessageRecord], out_path: Path) -> None:
-    out_path = Path(out_path)
-    with out_path.open("w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=CSV_FIELDS)
-        writer.writeheader()
+    with CsvStreamWriter(out_path) as writer:
         for m in messages:
-            writer.writerow(
-                {
-                    "folder": m.folder,
-                    "date": m.date.isoformat() if m.date else "",
-                    "sender": m.sender,
-                    "sender_name": m.sender_name,
-                    "to": "; ".join(m.to),
-                    "cc": "; ".join(m.cc),
-                    "subject": m.subject,
-                    "size_bytes": m.size_bytes,
-                    "attachment_count": len(m.attachments),
-                    "attachment_names": "; ".join(a.filename for a in m.attachments),
-                    "path": str(m.path),
-                }
-            )
+            writer.write(m)
+
+
+class XlsxReportWriter:
+    """Build a multi-sheet .xlsx report (Excel-friendly output).
+
+    Messages are streamed into the workbook one row at a time via
+    ``write()`` (uses openpyxl's write-only mode, so memory stays flat
+    regardless of mailbox size). Call ``close(result)`` at the end to add
+    the summary/ranking sheets (built from the already-aggregated
+    ``AnalysisResult``, which is cheap even for huge mailboxes) and save
+    the file.
+    """
+
+    def __init__(self, out_path: Path):
+        try:
+            import openpyxl
+        except ImportError as exc:
+            raise RuntimeError(
+                "openpyxl がインストールされていません。`pip install openpyxl` を実行してください。"
+            ) from exc
+        self._out_path = Path(out_path)
+        self._wb = openpyxl.Workbook(write_only=True)
+        self._messages_ws = self._wb.create_sheet("Messages")
+        self._messages_ws.append(CSV_FIELDS)
+
+    def write(self, m: MessageRecord) -> None:
+        self._messages_ws.append(_message_row(m))
+
+    def close(self, result: AnalysisResult, *, top_n: int = 10) -> None:
+        d = to_dict(result, top_n=top_n)
+
+        summary_ws = self._wb.create_sheet("Summary")
+        summary_ws.append(["項目", "値"])
+        summary_ws.append(["総メッセージ数", d["total_messages"]])
+        summary_ws.append(["解析エラー", d["parse_errors"]])
+        summary_ws.append(["合計サイズ", d["total_size_human"]])
+        summary_ws.append(["期間(開始)", d["date_range"]["earliest"] or ""])
+        summary_ws.append(["期間(終了)", d["date_range"]["latest"] or ""])
+        summary_ws.append(["添付ファイル数", d["attachments"]["total_count"]])
+        summary_ws.append(["添付ファイル合計サイズ", d["attachments"]["total_human"]])
+
+        folders_ws = self._wb.create_sheet("Folders")
+        folders_ws.append(["フォルダ", "件数"])
+        for folder, count in d["folders"].items():
+            folders_ws.append([folder, count])
+
+        senders_ws = self._wb.create_sheet("Top Senders")
+        senders_ws.append(["送信者", "件数"])
+        for sender, count in d["top_senders"]:
+            senders_ws.append([sender, count])
+
+        recipients_ws = self._wb.create_sheet("Top Recipients")
+        recipients_ws.append(["受信者", "件数"])
+        for recipient, count in d["top_recipients"]:
+            recipients_ws.append([recipient, count])
+
+        domains_ws = self._wb.create_sheet("Top Domains")
+        domains_ws.append(["ドメイン", "件数"])
+        for domain, count in d["top_domains"]:
+            domains_ws.append([domain, count])
+
+        monthly_ws = self._wb.create_sheet("Monthly")
+        monthly_ws.append(["年月", "件数"])
+        for month, count in d["messages_per_month"].items():
+            monthly_ws.append([month, count])
+
+        att_ws = self._wb.create_sheet("Attachments by Ext")
+        att_ws.append(["拡張子", "件数"])
+        for ext, count in d["attachments"]["by_extension"].items():
+            att_ws.append([ext, count])
+
+        self._wb.save(self._out_path)
+
+
+def write_xlsx(result: AnalysisResult, out_path: Path, *, top_n: int = 10) -> None:
+    """Convenience: build a full .xlsx report from an already-collected
+    ``AnalysisResult`` (i.e. ``result.messages`` populated). For very large
+    mailboxes, use ``XlsxReportWriter`` directly with ``analyzer.analyze``'s
+    ``on_message`` streaming instead.
+    """
+    writer = XlsxReportWriter(out_path)
+    for m in result.messages:
+        writer.write(m)
+    writer.close(result, top_n=top_n)

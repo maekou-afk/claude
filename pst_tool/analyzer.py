@@ -10,7 +10,7 @@ from email import policy
 from email.parser import BytesParser
 from email.utils import getaddresses, parsedate_to_datetime
 from pathlib import Path
-from typing import Iterable, Iterator, Optional
+from typing import Callable, Iterable, Iterator, Optional
 
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
@@ -63,7 +63,18 @@ class MessageRecord:
         return self.sender.split("@")[-1].lower() if "@" in self.sender else ""
 
 
-def parse_eml(path: Path, root: Path) -> MessageRecord:
+def parse_eml(path: Path, root: Path, *, extract_body: bool = True) -> MessageRecord:
+    """Parse one .eml file.
+
+    ``extract_body`` controls whether the plain-text/HTML body is decoded
+    and kept on the record. Folder/sender/date/attachment stats never
+    require the body, so callers that only need aggregate counts (e.g. the
+    ``analyze`` CLI command) should pass ``extract_body=False`` to avoid
+    holding the full text of every message in memory at once -- important
+    for multi-gigabyte PST files with hundreds of thousands of messages.
+    Attachment *payloads* are never retained on the record either way (only
+    filename/type/size), so attachments don't bloat memory here regardless.
+    """
     folder = _folder_for(path, root)
     size_bytes = path.stat().st_size
     record = MessageRecord(path=path, folder=folder, size_bytes=size_bytes)
@@ -107,6 +118,8 @@ def parse_eml(path: Path, root: Path) -> MessageRecord:
                     size_bytes=len(payload),
                 )
             )
+        elif not extract_body:
+            continue
         elif part.get_content_type() == "text/plain" and not body_parts:
             try:
                 body_parts.append(part.get_content())
@@ -144,12 +157,24 @@ class AnalysisResult:
         return counter.most_common(n)
 
 
-def analyze(root: Path, *, keep_messages: bool = True) -> AnalysisResult:
+def analyze(
+    root: Path,
+    *,
+    keep_messages: bool = True,
+    extract_body: bool = False,
+    on_message: Optional[Callable[[MessageRecord], None]] = None,
+) -> AnalysisResult:
+    """Walk every .eml under ``root`` once, aggregating stats as it goes.
+
+    For very large mailboxes, pass ``on_message`` (e.g. a CSV/XLSX row
+    writer) and ``keep_messages=False`` to stream each record out to disk
+    immediately instead of accumulating the full message list in memory.
+    """
     root = Path(root)
     result = AnalysisResult(root=root)
 
     for eml_path in iter_eml_files(root):
-        record = parse_eml(eml_path, root)
+        record = parse_eml(eml_path, root, extract_body=extract_body)
         result.total_messages += 1
         result.total_size_bytes += record.size_bytes
         result.folder_counts[record.folder] += 1
@@ -176,10 +201,31 @@ def analyze(root: Path, *, keep_messages: bool = True) -> AnalysisResult:
                 ext = Path(att.filename).suffix.lower() or "(no extension)"
                 result.attachment_extension_counts[ext] += 1
 
+        if on_message:
+            on_message(record)
         if keep_messages:
             result.messages.append(record)
 
     return result
+
+
+def _field_value(record: MessageRecord, field_name: str, *, case_sensitive: bool) -> str:
+    value = getattr(record, field_name, "")
+    if isinstance(value, list):
+        value = " ".join(value)
+    return value if case_sensitive else value.lower()
+
+
+def matches_keyword(
+    record: MessageRecord,
+    keyword: str,
+    *,
+    case_sensitive: bool = False,
+    fields: tuple[str, ...] = ("subject", "body_text", "sender", "to"),
+) -> bool:
+    if not case_sensitive:
+        keyword = keyword.lower()
+    return any(keyword in _field_value(record, f, case_sensitive=case_sensitive) for f in fields)
 
 
 def search_messages(
@@ -189,17 +235,8 @@ def search_messages(
     case_sensitive: bool = False,
     fields: tuple[str, ...] = ("subject", "body_text", "sender", "to"),
 ) -> list[MessageRecord]:
-    if not case_sensitive:
-        keyword = keyword.lower()
-
-    def field_value(record: MessageRecord, field_name: str) -> str:
-        value = getattr(record, field_name, "")
-        if isinstance(value, list):
-            value = " ".join(value)
-        return value if case_sensitive else value.lower()
-
-    matches = []
-    for record in messages:
-        if any(keyword in field_value(record, f) for f in fields):
-            matches.append(record)
-    return matches
+    return [
+        record
+        for record in messages
+        if matches_keyword(record, keyword, case_sensitive=case_sensitive, fields=fields)
+    ]

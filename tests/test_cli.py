@@ -7,6 +7,8 @@ import json
 from email.message import EmailMessage
 from pathlib import Path
 
+import pytest
+
 from pst_tool.cli import main
 
 
@@ -56,3 +58,28 @@ def test_search_with_extracted_dir(tmp_path: Path, capsys):
 
     captured = capsys.readouterr()
     assert "1 件のメッセージ" in captured.out
+
+
+def test_analyze_xlsx_out(tmp_path: Path, capsys):
+    pytest.importorskip("openpyxl")
+    import openpyxl
+
+    root = tmp_path / "extracted"
+    _write_eml(
+        root / "Inbox" / "1.eml",
+        "Hello",
+        "a@example.com",
+        "b@example.com",
+        "Mon, 05 Jan 2024 09:00:00 +0000",
+    )
+    xlsx_out = tmp_path / "report.xlsx"
+
+    main(["analyze", "--extracted-dir", str(root), "--xlsx-out", str(xlsx_out)])
+
+    wb = openpyxl.load_workbook(xlsx_out)
+    assert "Messages" in wb.sheetnames
+    rows = list(wb["Messages"].iter_rows(values_only=True))
+    assert len(rows) == 2  # header + 1 message
+
+    captured = capsys.readouterr()
+    assert "Excel" in captured.out

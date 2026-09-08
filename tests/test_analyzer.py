@@ -189,3 +189,84 @@ def test_write_csv(mailbox_root: Path, tmp_path: Path):
     assert "subject" in content.splitlines()[0]
     assert "Project kickoff" in content
     assert content.count("\n") >= 4
+
+
+def test_analyze_streaming_does_not_retain_messages(mailbox_root: Path):
+    """keep_messages=False + on_message must not build up an in-memory list
+
+    -- this is what keeps memory flat when analyzing a multi-gigabyte PST
+    with hundreds of thousands of messages."""
+    streamed: list[analyzer.MessageRecord] = []
+    result = analyzer.analyze(
+        mailbox_root, keep_messages=False, on_message=streamed.append
+    )
+
+    assert result.messages == []
+    assert len(streamed) == 4
+    # aggregate stats are still computed correctly without keeping messages
+    assert result.total_messages == 4
+    assert result.folder_counts["Inbox"] == 2
+
+
+def test_analyze_extract_body_default_false(mailbox_root: Path):
+    result = analyzer.analyze(mailbox_root)
+    assert all(m.body_text == "" for m in result.messages)
+
+    result_with_body = analyzer.analyze(mailbox_root, extract_body=True)
+    kickoff = next(m for m in result_with_body.messages if m.subject == "Project kickoff")
+    assert "kick off" in kickoff.body_text
+
+
+def test_matches_keyword_streaming_search(mailbox_root: Path):
+    matches: list[analyzer.MessageRecord] = []
+
+    def on_message(record: analyzer.MessageRecord) -> None:
+        if analyzer.matches_keyword(record, "budget"):
+            matches.append(record)
+
+    analyzer.analyze(
+        mailbox_root, keep_messages=False, extract_body=True, on_message=on_message
+    )
+    assert len(matches) == 1
+    assert matches[0].subject == "Budget approval"
+
+
+def test_write_xlsx(mailbox_root: Path, tmp_path: Path):
+    pytest.importorskip("openpyxl")
+    import openpyxl
+
+    result = analyzer.analyze(mailbox_root)
+    out_xlsx = tmp_path / "report.xlsx"
+    report.write_xlsx(result, out_xlsx, top_n=5)
+
+    wb = openpyxl.load_workbook(out_xlsx)
+    assert "Messages" in wb.sheetnames
+    assert "Summary" in wb.sheetnames
+    assert "Folders" in wb.sheetnames
+
+    messages_ws = wb["Messages"]
+    rows = list(messages_ws.iter_rows(values_only=True))
+    assert rows[0][0] == "folder"
+    assert len(rows) == 1 + result.total_messages  # header + one row per message
+
+
+def test_xlsx_report_writer_streaming(mailbox_root: Path, tmp_path: Path):
+    pytest.importorskip("openpyxl")
+    import openpyxl
+
+    from pst_tool.report import XlsxReportWriter
+
+    out_xlsx = tmp_path / "streamed.xlsx"
+    writer = XlsxReportWriter(out_xlsx)
+
+    def on_message(record: analyzer.MessageRecord) -> None:
+        writer.write(record)
+
+    result = analyzer.analyze(
+        mailbox_root, keep_messages=False, extract_body=False, on_message=on_message
+    )
+    writer.close(result, top_n=5)
+
+    wb = openpyxl.load_workbook(out_xlsx)
+    rows = list(wb["Messages"].iter_rows(values_only=True))
+    assert len(rows) == 1 + result.total_messages

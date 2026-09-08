@@ -59,10 +59,40 @@ def cmd_extract(args) -> None:
 
 def cmd_analyze(args) -> None:
     eml_root = _resolve_eml_root(args)
-    result = analyzer.analyze(eml_root)
+
+    # Stream rows straight to CSV/XLSX as each message is parsed, instead of
+    # holding every MessageRecord in memory -- important for multi-gigabyte
+    # PSTs with hundreds of thousands of messages.
+    csv_writer = report.CsvStreamWriter(args.csv_out) if args.csv_out else None
+    xlsx_writer = None
+    if args.xlsx_out:
+        try:
+            xlsx_writer = report.XlsxReportWriter(args.xlsx_out)
+        except RuntimeError as exc:
+            print(f"エラー: {exc}", file=sys.stderr)
+            sys.exit(1)
+    writers = [w for w in (csv_writer, xlsx_writer) if w is not None]
+
+    def on_message(record):
+        for w in writers:
+            w.write(record)
+
+    result = analyzer.analyze(
+        eml_root,
+        keep_messages=False,
+        extract_body=False,
+        on_message=on_message if writers else None,
+    )
 
     if result.total_messages == 0:
         print("警告: メッセージが見つかりませんでした。PSTファイルが空か、展開に失敗している可能性があります。", file=sys.stderr)
+
+    if csv_writer:
+        csv_writer.close()
+        print(f"CSVを書き出しました: {args.csv_out}")
+    if xlsx_writer:
+        xlsx_writer.close(result, top_n=args.top)
+        print(f"Excel(.xlsx)レポートを書き出しました: {args.xlsx_out}")
 
     if args.json_out:
         Path(args.json_out).write_text(report.to_json(result, top_n=args.top), encoding="utf-8")
@@ -70,21 +100,27 @@ def cmd_analyze(args) -> None:
     if args.markdown_out:
         Path(args.markdown_out).write_text(report.to_markdown(result, top_n=args.top), encoding="utf-8")
         print(f"Markdownレポートを書き出しました: {args.markdown_out}")
-    if args.csv_out:
-        report.write_csv(result.messages, args.csv_out)
-        print(f"CSVを書き出しました: {args.csv_out}")
 
-    if not (args.json_out or args.markdown_out or args.csv_out):
+    if not (args.json_out or args.markdown_out or args.csv_out or args.xlsx_out):
         print(report.to_markdown(result, top_n=args.top))
 
 
 def cmd_search(args) -> None:
     eml_root = _resolve_eml_root(args)
-    result = analyzer.analyze(eml_root)
     fields = tuple(args.field) if args.field else ("subject", "body_text", "sender", "to")
-    matches = analyzer.search_messages(
-        result.messages, args.keyword, case_sensitive=args.case_sensitive, fields=fields
-    )
+
+    # Only accumulate messages that actually match, discarding the rest as
+    # we go -- searching body text on a 7GB mailbox would otherwise mean
+    # holding every message's decoded body in memory at once.
+    matches: list[analyzer.MessageRecord] = []
+
+    def on_message(record):
+        if analyzer.matches_keyword(
+            record, args.keyword, case_sensitive=args.case_sensitive, fields=fields
+        ):
+            matches.append(record)
+
+    analyzer.analyze(eml_root, keep_messages=False, extract_body=True, on_message=on_message)
 
     print(f"{len(matches)} 件のメッセージが '{args.keyword}' に一致しました。\n")
     for m in matches[: args.limit]:
@@ -97,7 +133,6 @@ def cmd_search(args) -> None:
 
 def cmd_attachments(args) -> None:
     eml_root = _resolve_eml_root(args)
-    result = analyzer.analyze(eml_root)
 
     def matches_filters(att: analyzer.Attachment) -> bool:
         if args.ext and Path(att.filename).suffix.lower().lstrip(".") not in {
@@ -113,7 +148,9 @@ def cmd_attachments(args) -> None:
         save_dir.mkdir(parents=True, exist_ok=True)
 
     total = 0
-    for m in result.messages:
+
+    def on_message(m: analyzer.MessageRecord) -> None:
+        nonlocal total
         for att in m.attachments:
             if not matches_filters(att):
                 continue
@@ -121,6 +158,8 @@ def cmd_attachments(args) -> None:
             print(f"[{m.folder}] {m.date} | {att.filename} ({att.size_bytes} bytes) <- {m.path}")
             if save_dir:
                 _save_attachment(m.path, att, save_dir, total)
+
+    analyzer.analyze(eml_root, keep_messages=False, extract_body=False, on_message=on_message)
 
     print(f"\n合計 {total} 件の添付ファイルが条件に一致しました。")
 
@@ -168,6 +207,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_analyze.add_argument("--json-out", help="JSONレポートの出力先パス")
     p_analyze.add_argument("--markdown-out", help="Markdownレポートの出力先パス")
     p_analyze.add_argument("--csv-out", help="メッセージ一覧CSVの出力先パス")
+    p_analyze.add_argument(
+        "--xlsx-out", help="Excel(.xlsx)レポートの出力先パス（要 openpyxl: pip install openpyxl）"
+    )
     p_analyze.add_argument("--top", type=int, default=10, help="送信者/受信者ランキングの表示件数")
     p_analyze.set_defaults(func=cmd_analyze)
 
