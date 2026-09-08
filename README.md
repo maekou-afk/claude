@@ -22,6 +22,14 @@ Microsoft Outlook の `.pst` ファイルを解析するコマンドラインツ
 - 結果を **Excel(.xlsx) / CSV / JSON / Markdown** で出力
   （.xlsxはシート分けされたレポートとして、そのままExcelで開けます）
 
+## インストール不要な代替ツール（会社PCで管理者権限がない場合）
+
+`readpst` のインストールや `pip install`、スクリプトの実行そのものが
+社内ポリシーで禁止されている場合は、代わりに
+[`web/mail-ledger/`](web/mail-ledger/) を使ってください。ブラウザで
+`mail_ledger.html` を開くだけで動作する、インストール不要のツールです
+（対象はPST全体ではなく、Outlookから個別にエクスポートした`.msg`ファイル）。
+
 内部処理は「PST展開」と「解析」を分離しているため、一度展開した結果
 （`--extracted-dir`）を使い回して何度でも高速に再解析できます。
 

@@ -1,0 +1,470 @@
+<title>メール台帳</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --bg: #EEF1EE;
+    --surface: #FFFFFF;
+    --surface-2: #E3E8E2;
+    --ink: #182420;
+    --muted: #5C6B64;
+    --line: #CCD5CB;
+    --accent: #0F6E52;
+    --accent-ink: #FFFFFF;
+    --warn: #B0432B;
+    --shadow: 0 1px 2px rgba(24, 36, 32, 0.06), 0 6px 20px rgba(24, 36, 32, 0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #121614;
+      --surface: #181F1B;
+      --surface-2: #202822;
+      --ink: #E7ECE8;
+      --muted: #93A199;
+      --line: #2B332E;
+      --accent: #54D7AE;
+      --accent-ink: #06231A;
+      --warn: #E8836A;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #121614;
+    --surface: #181F1B;
+    --surface-2: #202822;
+    --ink: #E7ECE8;
+    --muted: #93A199;
+    --line: #2B332E;
+    --accent: #54D7AE;
+    --accent-ink: #06231A;
+    --warn: #E8836A;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    line-height: 1.6;
+  }
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 28px 24px 64px;
+  }
+
+  /* ---- header ---- */
+  header.top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 24px;
+    flex-wrap: wrap;
+    margin-bottom: 22px;
+  }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 6px;
+  }
+  h1 {
+    font-family: "Newsreader", serif;
+    font-style: italic;
+    font-weight: 500;
+    font-size: 40px;
+    letter-spacing: -0.01em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .lede {
+    max-width: 62ch;
+    color: var(--muted);
+    margin: 10px 0 0;
+    font-size: 15px;
+  }
+  .privacy-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 8px 14px 8px 12px;
+    font-size: 13px;
+    color: var(--ink);
+    box-shadow: var(--shadow);
+    white-space: nowrap;
+  }
+  .privacy-badge svg { flex: none; color: var(--accent); }
+
+  /* ---- intake ---- */
+  .intake {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 22px;
+    box-shadow: var(--shadow);
+    margin-bottom: 26px;
+  }
+  .drop-zone {
+    border: 1.5px dashed var(--line);
+    border-radius: 12px;
+    padding: 28px 20px;
+    text-align: center;
+    transition: border-color 120ms ease, background 120ms ease;
+  }
+  .drop-zone.drag-over {
+    border-color: var(--accent);
+    background: var(--surface-2);
+  }
+  .drop-zone p.hint {
+    color: var(--muted);
+    font-size: 13.5px;
+    margin: 10px 0 0;
+  }
+  .btn-row {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 4px;
+  }
+  .btn {
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 9px;
+    padding: 10px 16px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    cursor: pointer;
+    transition: transform 80ms ease, border-color 120ms ease;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn:active { transform: translateY(1px); }
+  .btn.primary {
+    background: var(--accent);
+    color: var(--accent-ink);
+    border-color: var(--accent);
+  }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn-ghost {
+    background: transparent;
+    border-color: transparent;
+    color: var(--muted);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  input[type="file"] { display: none; }
+
+  .progress-wrap { margin-top: 16px; }
+  .progress-track {
+    height: 6px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    overflow: hidden;
+  }
+  .progress-bar {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    transition: width 150ms ease;
+  }
+  .progress-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12.5px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+
+  .sample-note {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px dashed var(--line);
+  }
+  .sample-note .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--warn); flex: none;
+  }
+
+  /* ---- stats ---- */
+  .stats-rail {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .tile {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 16px;
+    box-shadow: var(--shadow);
+  }
+  .tile-label {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .tile-value {
+    font-family: "IBM Plex Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 19px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+
+  /* ---- main grid ---- */
+  .main-grid {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+  @media (max-width: 860px) {
+    .main-grid { grid-template-columns: 1fr; }
+  }
+  .side-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 16px;
+    box-shadow: var(--shadow);
+  }
+  .panel h2 {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 10px;
+    font-weight: 500;
+  }
+  .panel ul { list-style: none; margin: 0; padding: 0; }
+  .panel li {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 13.5px;
+  }
+  .panel li:last-child { border-bottom: none; }
+  .li-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .li-count {
+    font-family: "IBM Plex Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    flex: none;
+  }
+  .li-empty { color: var(--muted); }
+
+  /* ---- ledger ---- */
+  .ledger-panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .ledger-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+    flex-wrap: wrap;
+  }
+  .search-box {
+    flex: 1 1 220px;
+    position: relative;
+  }
+  .search-box input {
+    width: 100%;
+    font-family: inherit;
+    font-size: 14px;
+    padding: 9px 12px 9px 34px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--ink);
+  }
+  .search-box input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .search-box svg {
+    position: absolute;
+    left: 10px; top: 50%;
+    transform: translateY(-50%);
+    color: var(--muted);
+  }
+  .ledger-count {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12.5px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .table-scroll {
+    overflow-x: auto;
+    max-height: 560px;
+    overflow-y: auto;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+  }
+  thead th {
+    position: sticky;
+    top: 0;
+    background: var(--surface-2);
+    text-align: left;
+    font-weight: 500;
+    font-size: 12px;
+    color: var(--muted);
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+    cursor: pointer;
+    white-space: nowrap;
+    user-select: none;
+  }
+  thead th:hover { color: var(--ink); }
+  thead th[data-active]::after {
+    content: attr(data-active);
+    font-family: "IBM Plex Mono", monospace;
+    margin-left: 5px;
+    font-size: 10px;
+  }
+  thead th[data-active="asc"]::after { content: "↑"; }
+  thead th[data-active="desc"]::after { content: "↓"; }
+  tbody td {
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  tbody tr:hover { background: var(--surface-2); }
+  tbody tr.row-error { color: var(--warn); }
+  .col-date { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--muted); }
+  .col-folder { color: var(--muted); white-space: nowrap; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+  .col-subject { max-width: 340px; }
+  .col-from, .col-to { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .col-size { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--muted); text-align: right; }
+  .att-badge {
+    display: inline-block;
+    font-size: 11px;
+    background: var(--surface-2);
+    border-radius: 999px;
+    padding: 1px 7px;
+    margin-left: 6px;
+    color: var(--muted);
+  }
+  .empty-row { text-align: center; color: var(--muted); padding: 40px 0 !important; }
+
+  footer.note {
+    margin-top: 22px;
+    font-size: 12.5px;
+    color: var(--muted);
+    max-width: 74ch;
+  }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <p class="eyebrow">Outlook .msg アーカイブ解析</p>
+      <h1>メール台帳</h1>
+      <p class="lede">.msgファイルをブラウザ内だけで解析します。フォルダごとの件数、差出人・宛先の集計、添付ファイル一覧、キーワード検索ができます。</p>
+    </div>
+    <div class="privacy-badge">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg>
+      ブラウザ内処理のみ・外部送信なし
+    </div>
+  </header>
+
+  <section class="intake">
+    <div class="drop-zone" id="dropZone">
+      <div class="btn-row">
+        <button class="btn primary" id="pickFilesBtn" type="button">.msgファイルを選択</button>
+        <button class="btn" id="pickFolderBtn" type="button">フォルダを選択（一括）</button>
+        <button class="btn btn-ghost" id="clearBtn" type="button" hidden>読み込み内容をクリア</button>
+      </div>
+      <p class="hint">ここにファイルまたはフォルダをドラッグ＆ドロップしてもかまいません。Outlookからエクスポートした.msgファイルに対応しています。</p>
+      <input type="file" id="fileInput" accept=".msg" multiple>
+      <input type="file" id="folderInput" webkitdirectory directory multiple>
+    </div>
+    <div class="progress-wrap" id="progressWrap" hidden>
+      <div class="progress-track"><div class="progress-bar" id="progressBar"></div></div>
+      <div class="progress-label" id="progressLabel">0 / 0 件を解析中…</div>
+    </div>
+    <div class="sample-note" id="sampleBadge">
+      <span class="dot"></span>
+      現在はサンプルデータを表示しています。ファイルを読み込むと実データに置き換わります。
+    </div>
+  </section>
+
+  <section class="stats-rail" id="statsRail"></section>
+
+  <section class="main-grid">
+    <div class="side-panel">
+      <div class="panel">
+        <h2>フォルダ別件数</h2>
+        <ul id="folderList"></ul>
+      </div>
+      <div class="panel">
+        <h2>送信者トップ</h2>
+        <ul id="senderList"></ul>
+      </div>
+      <div class="panel">
+        <h2>送信ドメイン</h2>
+        <ul id="domainList"></ul>
+      </div>
+    </div>
+
+    <div class="ledger-panel">
+      <div class="ledger-toolbar">
+        <div class="search-box">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg>
+          <input type="text" id="searchInput" placeholder="件名・本文・差出人・宛先で検索">
+        </div>
+        <span class="ledger-count" id="ledgerCount"></span>
+        <button class="btn" id="exportBtn" type="button" disabled>CSVを保存</button>
+      </div>
+      <div class="table-scroll">
+        <table id="ledgerTable">
+          <thead>
+            <tr>
+              <th data-sort="date" data-active="desc">日付</th>
+              <th>フォルダ</th>
+              <th data-sort="subject">件名</th>
+              <th data-sort="sender">差出人</th>
+              <th>宛先</th>
+              <th data-sort="size">サイズ</th>
+            </tr>
+          </thead>
+          <tbody id="ledgerBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <footer class="note">
+    件名・差出人・宛先・添付ファイル名はMAPIプロパティ（PidTagSubject等）から、本文はプレーンテキストまたは圧縮RTFを展開して抽出しています。RTF内の書式によっては本文抽出が不完全な場合があります。読み込んだファイルの内容は一切外部送信されず、このタブを閉じると消去されます。
+  </footer>
+</div>
+

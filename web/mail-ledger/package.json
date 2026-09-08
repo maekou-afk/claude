@@ -1,0 +1,15 @@
+{
+  "name": "mail-ledger-build",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Build script for the browser-only .msg analyzer (bundles @kenjiuno/msgreader for inline embedding in mail_ledger.html).",
+  "scripts": {
+    "build": "bash build.sh"
+  },
+  "devDependencies": {
+    "@kenjiuno/msgreader": "^1.28.0",
+    "buffer": "^6.0.3",
+    "esbuild": "^0.24.0",
+    "string_decoder": "^1.3.0"
+  }
+}
